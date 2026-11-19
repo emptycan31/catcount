@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>野良猫カウンター</title>
+<style>
+:root{--bg:#e6ecec;--card:#ffffff;--text:#1e2829;--sub:#5d6f70;--line:#cdd7d7;--accent:#485859;--accent-t:#ffffff;--hero-bg:#485859;--hero-t:#ffffff;--title:#485859;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#131a1b;--card:#1d2728;--text:#e6eded;--sub:#9aadae;--line:#2f3d3e;--accent:#8fb2b3;--accent-t:#111718;--hero-bg:#1d2728;--hero-t:#e6eded;--title:#e6eded;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#131a1b;--card:#1d2728;--text:#e6eded;--sub:#9aadae;--line:#2f3d3e;--accent:#8fb2b3;--accent-t:#111718;--hero-bg:#1d2728;--hero-t:#e6eded;--title:#e6eded;color-scheme:dark}
+*{box-sizing:border-box}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Hiragino Sans","Noto Sans JP",sans-serif;line-height:1.5}
+main{max-width:640px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:1.4rem;margin:0 0 4px;color:var(--title)}
+.sub{color:var(--sub);font-size:.9rem;margin:0 0 16px}
+.total{background:var(--hero-bg);color:var(--hero-t);border:1px solid var(--hero-bg);border-radius:16px;padding:16px;text-align:center;margin-bottom:16px}
+.total b{font-size:2.6rem;display:block;line-height:1.1}
+.total span{color:inherit;opacity:.8;font-size:.85rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px}
+.card{background:var(--card);border:1px solid #807B74;border-radius:14px;padding:12px;display:flex;flex-direction:column;gap:8px}
+.head{display:flex;align-items:center;gap:8px;font-weight:600;font-size:.95rem}
+.dot{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);flex:none}
+.row{display:flex;align-items:center;justify-content:space-between}
+.n{font-size:1.8rem;font-weight:700;min-width:2ch;text-align:center}
+.n.top{color:#C8297D}
+button{font:inherit;cursor:pointer;border:0;border-radius:10px}
+.pm{width:44px;height:44px;font-size:1.4rem;background:var(--accent);color:var(--accent-t)}
+.pm.minus{background:transparent;color:var(--sub);border:1px solid var(--line)}
+.bar{height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+.bar i{display:block;height:100%;background:#807B74;width:0;transition:width .2s}
+.add{display:flex;gap:8px;margin:16px 0 8px}
+input{flex:1;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--text);min-width:0}
+.add button{padding:0 16px;background:var(--accent);color:var(--accent-t)}
+.reset{background:transparent;color:var(--sub);text-decoration:underline;padding:8px}
+.del{background:none;color:var(--sub);font-size:.8rem;padding:0 4px;margin-left:auto}
+.card{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.card.dragging{transform:scale(1.05);box-shadow:0 8px 24px rgba(0,0,0,.25);border-color:var(--accent);position:relative;z-index:2}
+.paw{position:fixed;font-size:1.6rem;pointer-events:none;z-index:30;transform:translate(-50%,0);animation:pawUp .9s ease-out forwards}
+@keyframes pawUp{0%{opacity:0;transform:translate(-50%,0) scale(.6)}20%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--dx,0px)),-70px) scale(1.2)}}
+@media (prefers-reduced-motion:reduce){.paw{display:none}}
+</style>
+</head>
+<body>
+<main>
+  <h1>🐈 野良猫カウンター</h1>
+  <p class="sub">見つけた猫をタップでカウント。カードを長押しすると並び替えできます。記録はこの端末に保存されます。</p>
+  <div class="total"><b id="total">0</b><span>匹発見</span></div>
+  <div class="grid" id="grid"></div>
+  <div class="add">
+    <input id="newName" placeholder="種類を追加（例：ブチ）" maxlength="12">
+    <button id="addBtn">追加</button>
+  </div>
+  <button class="reset" id="reset">カウントをリセット</button>
+  <button class="reset" id="snd"></button>
+</main>
+<script>
+const KEY="catCounterV1";
+const DEFAULT=[
+ {n:"白",c:"#ffffff"},{n:"黒",c:"#222222"},{n:"白黒",c:"#9a9a9a"},{n:"ハチワレ",c:"#6f6f6f"},
+ {n:"茶トラ",c:"#e0933f"},{n:"キジトラ",c:"#7a5c3a"},{n:"サバトラ",c:"#9aa3ab"},
+ {n:"三毛",c:"#e8b27a"},{n:"サビ",c:"#8a4b2a"},{n:"グレー",c:"#b5b5b5"},{n:"レア猫",c:"#d9c7e8"}
+].map(x=>({name:x.n,color:x.c,count:0}));
+let cats;
+try{cats=JSON.parse(localStorage.getItem(KEY)||"null")}catch(e){cats=null}
+if(!Array.isArray(cats))cats=DEFAULT;
+const RENAME={"白猫":"白","黒猫":"黒","その他":"レア猫"};
+cats.forEach(c=>{if(RENAME[c.name])c.name=RENAME[c.name]});
+const wi=cats.findIndex(c=>c.name==="白黒（ハチワレ等）");
+if(wi>=0){cats[wi].name="白黒";if(!cats.some(c=>c.name==="ハチワレ"))cats.splice(wi+1,0,{name:"ハチワレ",color:"#6f6f6f",count:0})}
+function save(){try{localStorage.setItem(KEY,JSON.stringify(cats))}catch(e){}}
+let actx=null,soundOn=true;
+try{soundOn=localStorage.getItem("catSoundV1")!=="off"}catch(e){}
+function meow(){
+  if(!soundOn)return;
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==="suspended")actx.resume();
+    const t=actx.currentTime,d=0.55+Math.random()*0.15,k=1+(Math.random()*0.2-0.1);
+    const o=actx.createOscillator(),f=actx.createBiquadFilter(),g=actx.createGain();
+    o.type="sawtooth";
+    o.frequency.setValueAtTime(420*k,t);
+    o.frequency.linearRampToValueAtTime(820*k,t+d*0.35);
+    o.frequency.linearRampToValueAtTime(480*k,t+d);
+    f.type="bandpass";f.Q.value=4;
+    f.frequency.setValueAtTime(700,t);
+    f.frequency.linearRampToValueAtTime(1800,t+d*0.4);
+    f.frequency.linearRampToValueAtTime(900,t+d);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.exponentialRampToValueAtTime(0.9,t+0.06);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+d);
+    o.connect(f);f.connect(g);g.connect(actx.destination);
+    o.start(t);o.stop(t+d+0.05);
+  }catch(e){}
+}
+function pawFloat(btn){
+  const r=btn.getBoundingClientRect(),p=document.createElement("div");
+  p.className="paw";p.textContent="🐾";
+  p.style.left=(r.left+r.width/2)+"px";p.style.top=r.top+"px";
+  p.style.setProperty("--dx",(Math.random()*30-15)+"px");
+  document.body.appendChild(p);
+  p.addEventListener("animationend",()=>p.remove());
+  setTimeout(()=>p.remove(),1200);
+}
+function render(){
+  const total=cats.reduce((a,c)=>a+c.count,0),max=Math.max(1,...cats.map(c=>c.count));
+  document.getElementById("total").textContent=total;
+  const g=document.getElementById("grid");g.innerHTML="";
+  cats.forEach((c,i)=>{
+    const d=document.createElement("div");d.className="card";d._cat=c;
+    d.innerHTML=`<div class="head"><span class="dot" style="background:${c.color}"></span><span></span><button class="del" title="削除">✕</button></div>
+    <div class="row"><button class="pm minus" aria-label="減らす">−</button><div class="n${c.count===max&&c.count>0?' top':''}">${c.count}</div><button class="pm plus" aria-label="増やす">＋</button></div>
+    <div class="bar"><i style="width:${c.count/max*100}%"></i></div>`;
+    d.querySelector(".head span:nth-child(2)").textContent=c.name;
+    d.querySelector(".plus").onclick=e=>{pawFloat(e.currentTarget);meow();c.count++;save();render()};
+    d.querySelector(".minus").onclick=()=>{if(c.count>0){c.count--;save();render()}};
+    d.querySelector(".del").onclick=()=>{if(confirm(c.name+"を削除しますか？")){cats.splice(i,1);save();render()}};
+    g.appendChild(d);
+  });
+}
+document.getElementById("addBtn").onclick=()=>{
+  const el=document.getElementById("newName"),v=el.value.trim();
+  if(!v)return;
+  const hue=Math.floor(Math.random()*360);
+  cats.push({name:v,color:`hsl(${hue},55%,70%)`,count:0});
+  el.value="";save();render();
+};
+document.getElementById("newName").addEventListener("keydown",e=>{if(e.key==="Enter")document.getElementById("addBtn").click()});
+document.getElementById("reset").onclick=()=>{if(confirm("すべてのカウントを0に戻しますか？")){cats.forEach(c=>c.count=0);save();render()}};
+const grid=document.getElementById("grid");
+let dragCard=null,timer=null,px=0,py=0,blockClick=false;
+function endDrag(){
+  clearTimeout(timer);
+  if(!dragCard)return;
+  dragCard.classList.remove("dragging");dragCard=null;
+  setTimeout(()=>{blockClick=false},300);
+  const order=[...grid.children].map(el=>el._cat);
+  cats.splice(0,cats.length,...order);save();render();
+}
+grid.addEventListener("pointerdown",e=>{
+  const card=e.target.closest(".card");if(!card)return;
+  px=e.clientX;py=e.clientY;clearTimeout(timer);
+  timer=setTimeout(()=>{dragCard=card;blockClick=true;card.classList.add("dragging");if(navigator.vibrate)navigator.vibrate(30)},450);
+});
+document.addEventListener("pointermove",e=>{
+  if(!dragCard){if(Math.hypot(e.clientX-px,e.clientY-py)>10)clearTimeout(timer);return}
+  const t=document.elementFromPoint(e.clientX,e.clientY),o=t&&t.closest?t.closest(".card"):null;
+  if(!o||o===dragCard||o.parentNode!==grid)return;
+  const kids=[...grid.children];
+  if(kids.indexOf(dragCard)<kids.indexOf(o))o.after(dragCard);else o.before(dragCard);
+});
+document.addEventListener("pointerup",endDrag);
+document.addEventListener("pointercancel",endDrag);
+document.addEventListener("touchmove",e=>{if(dragCard)e.preventDefault()},{passive:false});
+grid.addEventListener("contextmenu",e=>e.preventDefault());
+grid.addEventListener("click",e=>{if(blockClick){e.stopPropagation();e.preventDefault()}},true);
+const snd=document.getElementById("snd");
+function sndLabel(){snd.textContent=soundOn?"🔊 サウンド: ON":"🔇 サウンド: OFF"}
+snd.onclick=()=>{soundOn=!soundOn;try{localStorage.setItem("catSoundV1",soundOn?"on":"off")}catch(e){}sndLabel();if(soundOn)meow()};
+sndLabel();
+try{localStorage.removeItem("catPhotosV1")}catch(e){}
+render();
+</script>
+</body>
+</html>
